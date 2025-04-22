@@ -7,6 +7,29 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
+# READ 
+def get_players(server_ip: str, search_query: str) -> list:
+    '''
+    Fetches players from the players collection of a given server.
+    Fetched players must have a NAME, IP, or STEAM64 that match the search query.
+    '''
+    if search_query:
+        players_ref = db.collection("servers").document(server_ip).collection("players")
+        players = players_ref.stream()
+        
+        matching_players = []
+        for player in players:
+            player_data = player.to_dict()
+            if (search_query.lower() in player.id or  # Search by IP
+                search_query.lower() in player_data.get("name", "").lower() or  # Search by name
+                search_query.lower() in str(player_data.get("steam64", ""))):  # Search by Steam64
+                matching_players.append(player_data)
+
+        print(f"Found {len(matching_players)} player(s):")
+        
+        return matching_players
+
+
 def add_player(server_ip: str, player_ip: str, steam64: str, name: str = None) -> bool:
     '''
     Adds a player to the players collection of a given server.

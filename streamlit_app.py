@@ -2,7 +2,7 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-from firebase_utils import add_player, delete_all_players
+from firebase_utils import add_player, get_players
 
 # Initialize Firebase if not done already
 if not firebase_admin._apps:  # If no apps are initialized, initialize Firebase
@@ -38,64 +38,32 @@ if selected_server_name:
     # Add Search Bar (search players by IP, name, or Steam64 ID)
     search_query = st.text_input("Search Player (by IP, name, or Steam64)", "")
 
-    # READ 
-    if search_query:
-        players_ref = db.collection("servers").document(server_info["ip"]).collection("players")
-        players = players_ref.stream()
-        
-        matching_players = []
-        for player in players:
-            player_data = player.to_dict()
-            if (search_query.lower() in player.id.lower() or  # Search by IP
-                search_query.lower() in player_data.get("name", "").lower() or  # Search by name
-                search_query.lower() in str(player_data.get("steam64", "")).lower()):  # Search by Steam64
-                matching_players.append(player_data)
-        
-        if matching_players:
-            st.write(f"Found {len(matching_players)} player(s):")
-            
-            for idx, player in enumerate(matching_players):
-                with st.container():
-                    # Box-style background
-                    st.markdown(
-                        """
-                        <style>
-                        .player-box {
-                            background-color: #f1f3f6;
-                            padding: 1rem;
-                            margin-bottom: 1rem;
-                            border-radius: 10px;
-                            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
-                        }
+    matching_players = get_players(
+        server_ip=server_info["ip"],
+        search_query=search_query
+    )
+    if matching_players:
+        for idx, player in enumerate(matching_players):
+            with st.container():
+                    col1, col2 = st.columns([3, 1])
 
+                    with col1:
+                        st.markdown(f"**IP**: {player['ip']}  \n"
+                                    f"**Name**: {player['name']}  \n"
+                                    f"**Steam64**: {player.get('steam64', 'N/A')}")
                         
-                        </style>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                    with col2:
+                        edit_key = f"edit_{idx}"
+                        remove_key = f"remove_{idx}"
 
-                    with st.markdown(f'<div class="player-box">', unsafe_allow_html=True):
-                        col1, col2 = st.columns([3, 1])
+                        if st.button("✏️ Edit", key=edit_key):
+                            st.session_state.editing_player = player  # or open a form etc.
 
-                        with col1:
-                            st.markdown(f"**IP**: {player['ip']}  \n"
-                                        f"**Name**: {player['name']}  \n"
-                                        f"**Steam64**: {player.get('steam64', 'N/A')}")
-                        
-                        with col2:
-                            edit_key = f"edit_{idx}"
-                            remove_key = f"remove_{idx}"
+                        if st.button("🗑️ Remove", key=remove_key):
+                            st.session_state.remove_player = player  # or trigger deletion logic
 
-                            if st.button("✏️ Edit", key=edit_key):
-                                st.session_state.editing_player = player  # or open a form etc.
-
-                            if st.button("🗑️ Remove", key=remove_key):
-                                st.session_state.remove_player = player  # or trigger deletion logic
-                                
-                    st.markdown("</div>", unsafe_allow_html=True)
-
-        else:
-            st.write("No players found matching the search criteria.")
+    else:
+        st.write("No players found matching the search criteria.")
 
     # Add Player Button + Form
     # Initialize session state for showing form
