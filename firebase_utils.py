@@ -10,8 +10,7 @@ db = firestore.client()
 # READ 
 def get_players(server_ip: str, search_query: str) -> list:
     '''
-    Fetches players from the players collection of a given server.
-    Fetched players must have a NAME, IP, or STEAM64 that match the search query.
+    Fetches all players whos NAME, IP, or STEAM64 match the search query.
     '''
     if search_query:
         players_ref = db.collection("servers").document(server_ip).collection("players")
@@ -34,55 +33,72 @@ def add_player(server_ip: str, player_ip: str, steam64: str, name: str = None) -
     '''
     Adds a player to the players collection of a given server.
 
+    - Creates a player document using player_ip if it doesn't already exist.
+    - Adds a new account (steam64 + name) under the player's "accounts" subcollection.
+
     Returns:
-        bool: True if player was added, False if player already exists, or the player was not added for any other reason.
+        bool: True if the player and account were added, False if the player already exists.
     '''
-    
-    # Use steam64 as name if name is not provided
+
+    # Fallback name if not provided
     if not name:
         name = steam64
 
-    # Reference to players collection
+    # References
     players_ref = db.collection("servers").document(server_ip).collection("players")
-
-    # Check if player already exists
     player_doc = players_ref.document(player_ip)
-    if player_doc.get().exists:
-        print(f"Player with IP {player_ip} already exists in server {server_ip}. No action taken.")
-        return False  # Player already exists
 
-    # Create the players collection by adding the new player
-    player_doc.set({
-        "ip": player_ip,
-        "steam64": steam64,
-        "name": name
-    })
+    # If the player doesn't exist, create the doc + subcollections
+    if not player_doc.get().exists:
+        try:
+            player_doc.set({
+                "ip": player_ip
+            })
+            # Initialize empty subcollections
+            player_doc.collection("bans")
+            player_doc.collection("warnings")
+            print(f"New player created for IP: {player_ip}")
+        except Exception as e:
+            print(f"Error creating player: {e}")
+            return False
 
-    # Create empty sub-collections: accounts, bans, warnings
-    player_doc.collection("accounts")
-    player_doc.collection("bans")
-    player_doc.collection("warnings")
+    # Add the account to the accounts subcollection
+    accounts_ref = player_doc.collection("accounts")
+    account_doc = accounts_ref.document(steam64)
 
-    print(f"Player '{name}' added to server '{server_ip}' with IP: {player_ip}")
-    return True
+    if account_doc.get().exists:
+        print(f"Account with Steam64 {steam64} already exists for player {player_ip}")
+        return False  # Account already exists
 
-def delete_all_players(server_ip: str) -> int:
+    try:
+        account_doc.set({
+            "steam64": steam64,
+            "name": name
+        })
+        print(f"Added account '{name}' with Steam64 {steam64} to player {player_ip}")
+        return True
+    except Exception as e:
+        print(f"Error adding account: {e}")
+        return False
+
+
+def delete_player(server_ip: str, player_ip: str, player_name: str, player_steam: str) -> bool:
     '''
-    Deletes all player documents in the players collection of a given server.
+    Deletes a player document in the players collection of a given server.
 
     Returns:
-        int: The number of players deleted.
+        bool: True if player was deleted, False if player does not exist.
     '''
     
     players_ref = db.collection("servers").document(server_ip).collection("players")
-    players = players_ref.stream()
+    player_doc = players_ref.document(player_ip)
 
-    deleted_count = 0
+    # Check if player exists
+    if not player_doc.get().exists:
+        print(f"Player with IP {player_ip} does not exist in server {server_ip}. No action taken.")
+        return False  # Player does not exist
 
-    for player in players:
-        player.reference.delete()
-        deleted_count += 1
-
-    print(f"Deleted {deleted_count} players from server {server_ip}.")
-    return deleted_count
-
+    # Delete the player document
+    player_doc.delete()
+    print(f"Player with IP {player_ip} deleted from server {server_ip}.")
+    return True
