@@ -2,7 +2,7 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-from firebase_utils import add_player, get_players
+from utils import add_player, get_players, load_players_cache, delete_player
 
 # Initialize Firebase if not done already
 if not firebase_admin._apps:  # If no apps are initialized, initialize Firebase
@@ -19,6 +19,8 @@ servers = servers_ref.stream()
 server_names = []
 server_data = {}
 
+players = {}
+
 for server in servers:
     data = server.to_dict()
     server_names.append(data["name"])
@@ -30,6 +32,7 @@ for server in servers:
 # Streamlit UI: Dropdown to select a server
 selected_server_name = st.selectbox("Select a Server", server_names)
 
+
 # Display information for the selected server
 if selected_server_name:
     server_info = server_data[selected_server_name]
@@ -38,30 +41,45 @@ if selected_server_name:
     # Add Search Bar (search players by IP, name, or Steam64 ID)
     search_query = st.text_input("Search Player (by IP, name, or Steam64)", "")
 
+    players = load_players_cache(server_info["ip"])
+
+    print("PLAYERS", players)
+
     matching_players = get_players(
-        server_ip=server_info["ip"],
-        search_query=search_query
+        search_query=search_query,
+        players_dict=players
     )
+
     if matching_players:
         for idx, player in enumerate(matching_players):
+            accounts = player.get("accounts", [])
             with st.container():
-                    col1, col2 = st.columns([3, 1])
+                col1, col2 = st.columns([3, 1])
 
-                    with col1:
-                        st.markdown(f"**IP**: {player['ip']}  \n"
-                                    f"**Name**: {player['name']}  \n"
-                                    f"**Steam64**: {player.get('steam64', 'N/A')}")
-                        
-                    with col2:
-                        edit_key = f"edit_{idx}"
-                        remove_key = f"remove_{idx}"
+                with col1:
+                    st.markdown(f"**IP**: {player['ip']}  \n")
+                    num_accounts = 1
+                    for account in accounts:
+                        steam64 = account.get("steam64", "N/A")
+                        name = account.get("name", "N/A")
+                        st.markdown(f"**Account {num_accounts}**:  \n"
+                                    f"**Steam64**: {steam64}  \t|\t"
+                                    f"**Name**: {name}  \n")
+                        num_accounts += 1
 
-                        if st.button("✏️ Edit", key=edit_key):
-                            st.session_state.editing_player = player  # or open a form etc.
+                with col2:
+                    edit_key = f"edit_{idx}"
+                    remove_key = f"remove_{idx}"
 
-                        if st.button("🗑️ Remove", key=remove_key):
-                            st.session_state.remove_player = player  # or trigger deletion logic
+                    if st.button("✏️ Edit", key=edit_key):
+                        st.session_state.editing_player = player  # or open a form etc.
 
+                    if st.button("🗑️ Remove", key=remove_key):
+                        delete_player(
+                            server_ip=server_info["ip"],
+                            player_ip=player["ip"],
+                            players_dict=players
+                        )
     else:
         st.write("No players found matching the search criteria.")
 
@@ -92,11 +110,11 @@ if selected_server_name:
                         server_ip=server_info["ip"],
                         player_ip=player_ip,
                         steam64=steam64_id,
+                        players_dict=players,
                         name=player_name if player_name else None
                     )
                     if success:
                         st.success(f"Player {player_name or steam64_id} added successfully!")
-                        st.session_state.show_form = False  # Optionally hide form again
                     else:
                         st.warning("Player with this IP already exists.")
                 else:
